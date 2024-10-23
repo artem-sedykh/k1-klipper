@@ -358,12 +358,20 @@ class TemperatureProbe:
         probe = self._get_probe()
         probe_name = probe.get_status(None)["name"]
         short_name = probe_name.split(maxsplit=1)[-1]
+        toolhead = self.printer.lookup_object("toolhead")
+
+        probe_calibration = probe.calibration
+        use_secondary_probe = probe_calibration.can_use_secondary_probe(toolhead)
+
         if short_name != self.name.split(maxsplit=1)[-1]:
             raise self.gcode.error(
                 "[%s] not linked to registered probe [%s]."
                 % (self.name, probe_name)
             )
-        manual_probe.verify_no_manual_probe(self.printer)
+
+        if not use_secondary_probe:
+            manual_probe.verify_no_manual_probe(self.printer)
+
         if self.in_calibration:
             raise gcmd.error(
                 "Already in probe drift calibration. Use "
@@ -409,17 +417,23 @@ class TemperatureProbe:
             self._finalize_drift_cal(False, "Error during initial move")
             raise
         # Caputure start position and begin initial probe
-        toolhead = self.printer.lookup_object("toolhead")
         self.start_pos = toolhead.get_position()[:2]
-        manual_probe.ManualProbeHelper(
-            self.printer, gcmd, self._manual_probe_finalize
-        )
+
+        if use_secondary_probe:
+            probe_calibration.set_nozzle_position_by_secondary_probe(gcmd, toolhead)
+            self._manual_probe_finalize(toolhead.get_position())
+        else:
+            manual_probe.ManualProbeHelper(self.printer, gcmd, self._manual_probe_finalize)
 
     cmd_TEMPERATURE_PROBE_NEXT_help = "Sample next probe drift temperature"
     def cmd_TEMPERATURE_PROBE_NEXT(self, gcmd):
         manual_probe.verify_no_manual_probe(self.printer)
         self.next_auto_temp = 99999999.
         toolhead = self.printer.lookup_object("toolhead")
+        probe = self._get_probe()
+        probe_calibration = probe.calibration
+        use_secondary_probe = probe_calibration.can_use_secondary_probe(toolhead)
+
         # Lift and Move to nozzle back to start position
         curpos = toolhead.get_position()
         start_z = curpos[2]
@@ -433,9 +447,12 @@ class TemperatureProbe:
         curpos[2] = start_z
         toolhead.manual_move(curpos, probe_speed)
         self.gcode.register_command("ABORT", None)
-        manual_probe.ManualProbeHelper(
-            self.printer, gcmd, self._manual_probe_finalize
-        )
+
+        if use_secondary_probe:
+            probe_calibration.set_nozzle_position_by_secondary_probe(gcmd, toolhead)
+            self._manual_probe_finalize(toolhead.get_position())
+        else:
+            manual_probe.ManualProbeHelper(self.printer, gcmd, self._manual_probe_finalize)
 
     cmd_TEMPERATURE_PROBE_COMPLETE_help = "Finish Probe Drift Calibration"
     def cmd_TEMPERATURE_PROBE_COMPLETE(self, gcmd):
