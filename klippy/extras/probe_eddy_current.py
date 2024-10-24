@@ -19,7 +19,6 @@ class EddyCalibration:
         # init secondary probe
         self.secondary_probe = config.get("secondary_probe", None)
         self.secondary_probe_z_offset = config.getfloat('secondary_probe_z_offset', 0.2, above=0.)
-        self.secondary_probe_speed = config.getfloat('secondary_probe_speed', 10.0, above=0.)
 
         # Current calibration data
         self.cal_freqs = []
@@ -221,26 +220,18 @@ class EddyCalibration:
         return True
 
     def set_nozzle_position_by_secondary_probe(self, gcmd, toolhead):
-        speed = self.secondary_probe_speed
         probe = self.printer.lookup_object(self.secondary_probe)
-        samples = 5
-        z_position = 0
 
-        for _ in range(samples):
-            nozzle_session = probe.start_probe_session(gcmd)
-            nozzle_session.run_probe(gcmd)
-            z_nozzle = nozzle_session.pull_probed_results()[0]
-            nozzle_session.end_probe_session()
-            z_position += z_nozzle[2]
-            toolhead.manual_move([z_nozzle[0], z_nozzle[1], 5.0], speed)
+        nozzle_session = probe.start_probe_session(gcmd)
+        nozzle_session.run_probe(gcmd)
+        z_nozzle = nozzle_session.pull_probed_results()[0]
+        nozzle_session.end_probe_session()
 
-        z_position = z_position / samples
-        gcmd.respond_info("average {0}".format(z_position))
+        z_position = z_nozzle[2] + self.secondary_probe_z_offset
+        gcmd.respond_info("probe: {0} secondary_probe_z_offset: {1} result: {2}".format(
+            z_nozzle[2], self.secondary_probe_z_offset, z_position))
 
-        z_position = z_position + self.secondary_probe_z_offset
-        gcmd.respond_info("with secondary_probe_z_offset {0}".format(z_position))
-
-        toolhead.manual_move([z_nozzle[0], z_nozzle[1], z_position], speed)
+        toolhead.manual_move([z_nozzle[0], z_nozzle[1], z_position], 2)
 
     def register_drift_compensation(self, comp):
         self.drift_comp = comp
